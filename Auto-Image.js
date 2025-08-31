@@ -488,6 +488,7 @@ function applyTheme() {
     activeColorPalette: [], // User-selected colors for conversion
     paintWhitePixels: true, // Default to ON
     paintTransparentPixels: false, // Default to OFF
+    onlyDifferentPixels: false, // Check board before painting
     currentCharges: 0,
     maxCharges: 1, // Default max charges
     cooldown: CONFIG.COOLDOWN_DEFAULT,
@@ -3014,6 +3015,11 @@ function applyTheme() {
               <span>${Utils.t("paintTransparentPixels")}</span>
               <input type="checkbox" id="settingsPaintTransparentToggle" ${state.paintTransparentPixels ? 'checked' : ''} class="wplace-notification-checkbox" />
             </label>
+            <!-- Only Different Pixels Toggle -->
+            <label class="wplace-notification-toggle">
+              <span>${Utils.t("onlyDifferentPixels")}</span>
+              <input type="checkbox" id="settingsOnlyDifferentToggle" ${state.onlyDifferentPixels ? 'checked' : ''} class="wplace-notification-checkbox" />
+            </label>
           </div>
         </div>
 
@@ -3277,6 +3283,10 @@ function applyTheme() {
         <label class="resize-checkbox-label">
             <input type="checkbox" id="paintTransparentToggle" checked>
             ${Utils.t("paintTransparentPixels")}
+        </label>
+        <label class="resize-checkbox-label">
+            <input type="checkbox" id="onlyDifferentToggle" ${state.onlyDifferentPixels ? 'checked' : ''}>
+            ${Utils.t("onlyDifferentPixels")}
         </label>
         <div class="resize-zoom-controls">
           <button id="zoomOutBtn" class="wplace-btn resize-zoom-btn" title="${Utils.t('zoomOut')}"><i class="fas fa-search-minus"></i></button>
@@ -3769,6 +3779,7 @@ function applyTheme() {
         const enableBlueMarbleToggle = settingsContainer.querySelector("#enableBlueMarbleToggle");
         const settingsPaintWhiteToggle = settingsContainer.querySelector("#settingsPaintWhiteToggle");
         const settingsPaintTransparentToggle = settingsContainer.querySelector("#settingsPaintTransparentToggle");
+        const settingsOnlyDifferentToggle = settingsContainer.querySelector("#settingsOnlyDifferentToggle");
 
         if (overlayOpacitySlider && overlayOpacityValue) {
           overlayOpacitySlider.addEventListener('input', (e) => {
@@ -3788,6 +3799,13 @@ function applyTheme() {
         if (settingsPaintTransparentToggle) {
           settingsPaintTransparentToggle.addEventListener('change', (e) => {
             state.paintTransparentPixels = e.target.checked;
+            saveBotSettings();
+          });
+        }
+
+        if (settingsOnlyDifferentToggle) {
+          settingsOnlyDifferentToggle.addEventListener('change', (e) => {
+            state.onlyDifferentPixels = e.target.checked;
             saveBotSettings();
           });
         }
@@ -3842,7 +3860,8 @@ function applyTheme() {
     const keepAspect = resizeContainer.querySelector("#keepAspect")
     const paintWhiteToggle = resizeContainer.querySelector("#paintWhiteToggle");
     const paintTransparentToggle = resizeContainer.querySelector("#paintTransparentToggle");
-  const zoomSlider = resizeContainer.querySelector("#zoomSlider");
+    const onlyDifferentToggle = resizeContainer.querySelector("#onlyDifferentToggle");
+    const zoomSlider = resizeContainer.querySelector("#zoomSlider");
   const zoomValue = resizeContainer.querySelector('#zoomValue');
   const zoomInBtn = resizeContainer.querySelector('#zoomInBtn');
   const zoomOutBtn = resizeContainer.querySelector('#zoomOutBtn');
@@ -4154,6 +4173,7 @@ function applyTheme() {
   if (zoomValue) zoomValue.textContent = '100%';
       paintWhiteToggle.checked = state.paintWhitePixels;
       paintTransparentToggle.checked = state.paintTransparentPixels;
+      if (onlyDifferentToggle) onlyDifferentToggle.checked = state.onlyDifferentPixels;
 
       let _previewTimer = null;
       let _previewJobId = 0;
@@ -4367,6 +4387,14 @@ function applyTheme() {
           _updateResizePreview();
           saveBotSettings();
         };
+
+        if (onlyDifferentToggle) {
+          onlyDifferentToggle.onchange = (e) => {
+            state.onlyDifferentPixels = e.target.checked;
+            _updateResizePreview();
+            saveBotSettings();
+          };
+        }
 
       let panX = 0, panY = 0;
       const clampPan = () => {
@@ -5356,23 +5384,24 @@ function applyTheme() {
           }
 
           
-          try {
-            const tileRegionX = pixelBatch ? (pixelBatch.regionX) : (regionX + adderX);
-            const tileRegionY = pixelBatch ? (pixelBatch.regionY) : (regionY + adderY);
-            const tileKeyParts = [(regionX + adderX), (regionY + adderY)];
-            const existingColorRGBA = await overlayManager.getTilePixelColor(tileKeyParts[0], tileKeyParts[1], pixelX, pixelY).catch(() => null);
-            if (existingColorRGBA && Array.isArray(existingColorRGBA)) {
-              const [er, eg, eb] = existingColorRGBA;
-              const existingColorId = findClosestColor([er, eg, eb], state.availableColors);
-              // console.log(`pixel at (${pixelX}, ${pixelY}) has color ${existingColorId} it should be ${colorId}`);
-              if (existingColorId === colorId) {
-                skippedPixels.alreadyPainted++;
-                console.log(`Skipped already painted pixel at (${pixelX}, ${pixelY})`);
-                continue; // Skip
+          if (state.onlyDifferentPixels) {
+            try {
+              const tileRegionX = pixelBatch ? (pixelBatch.regionX) : (regionX + adderX);
+              const tileRegionY = pixelBatch ? (pixelBatch.regionY) : (regionY + adderY);
+              const tileKeyParts = [(regionX + adderX), (regionY + adderY)];
+              const existingColorRGBA = await overlayManager.getTilePixelColor(tileKeyParts[0], tileKeyParts[1], pixelX, pixelY).catch(() => null);
+              if (existingColorRGBA && Array.isArray(existingColorRGBA)) {
+                const [er, eg, eb] = existingColorRGBA;
+                const existingColorId = findClosestColor([er, eg, eb], state.availableColors);
+                if (existingColorId === colorId) {
+                  skippedPixels.alreadyPainted++;
+                  console.log(`Skipped already painted pixel at (${pixelX}, ${pixelY})`);
+                  continue; // Skip
+                }
               }
+            } catch (e) {
+              /* ignore */
             }
-          } catch (e) {
-            /* ignore */
           }
 
           pixelBatch.pixels.push({
@@ -5683,6 +5712,7 @@ function applyTheme() {
   customWhiteThreshold: state.customWhiteThreshold,
   paintWhitePixels: state.paintWhitePixels,
   paintTransparentPixels: state.paintTransparentPixels,
+  onlyDifferentPixels: state.onlyDifferentPixels,
   resizeSettings: state.resizeSettings,
   originalImage: state.originalImage,
   // Save ignore mask (as base64) with its dimensions
@@ -5729,6 +5759,7 @@ function applyTheme() {
   state.customWhiteThreshold = settings.customWhiteThreshold ?? CONFIG.WHITE_THRESHOLD;
   state.paintWhitePixels = settings.paintWhitePixels ?? true;
   state.paintTransparentPixels = settings.paintTransparentPixels ?? false;
+  state.onlyDifferentPixels = settings.onlyDifferentPixels ?? false;
   state.resizeSettings = settings.resizeSettings ?? null;
   state.originalImage = settings.originalImage ?? null;
       // Notifications

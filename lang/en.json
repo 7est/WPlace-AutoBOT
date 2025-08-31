@@ -139,5 +139,6 @@
   "hideStats": "Hide Stats",
   "paintOptions": "Paint Options",
   "paintWhitePixels": "Paint White Pixels",
-  "paintTransparentPixels": "Paint Transparent Pixels"
+  "paintTransparentPixels": "Paint Transparent Pixels",
+  "onlyDifferentPixels": "Only paint different color pixels"
 }
