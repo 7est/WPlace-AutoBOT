@@ -5133,48 +5133,23 @@ function applyTheme() {
       })
     }
 
-    async function startPainting() {
-      if (!state.imageLoaded || !state.startPosition || !state.region) {
-        updateUI("missingRequirements", "error")
-        return false
-      }
-      await ensureToken()
-      if (!turnstileToken) return false
-
-      state.running = true
-      state.stopFlag = false
-      startBtn.disabled = true
-      stopBtn.disabled = false
-      uploadBtn.disabled = true
-      selectPosBtn.disabled = true
-      resizeBtn.disabled = true
-      saveBtn.disabled = true
-      toggleOverlayBtn.disabled = true;
-
-      updateUI("startPaintingMsg", "success")
-
-      try {
-        await processImage()
-        return true
-      } catch {
-        updateUI("paintingError", "error")
-        return false
-      } finally {
-        state.running = false
-        stopBtn.disabled = true
-        saveBtn.disabled = false
-
-        if (!state.stopFlag) {
-          startBtn.disabled = true
-          uploadBtn.disabled = false
-          selectPosBtn.disabled = false
-          resizeBtn.disabled = false
-        } else {
-          startBtn.disabled = false
+      async function startPainting() {
+        if (!state.imageLoaded || !state.startPosition || !state.region) {
+          updateUI("missingRequirements", "error")
+          return false
         }
-        toggleOverlayBtn.disabled = false;
+
+        // Show the final template overlay instead of painting automatically
+        overlayManager.enable()
+        toggleOverlayBtn.classList.add('active')
+        toggleOverlayBtn.setAttribute('aria-pressed', 'true')
+        Utils.showAlert(Utils.t("overlayEnabled"), "info")
+
+        // Disable controls related to auto painting
+        startBtn.disabled = true
+        stopBtn.disabled = true
+        return true
       }
-    }
 
     if (startBtn) {
       startBtn.addEventListener("click", startPainting)
