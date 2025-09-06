@@ -870,6 +870,8 @@ function applyTheme() {
   }
 
   const overlayManager = new OverlayManager();
+  // expose overlay manager globally so other scripts can access overlay data
+  window.overlayManager = overlayManager;
 
   // Optimized Turnstile token handling with improved caching and retry logic
   let turnstileToken = null
