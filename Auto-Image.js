@@ -4888,9 +4888,10 @@ function applyTheme() {
 
         const finalImageBitmap = await createImageBitmap(tempCanvas);
         await overlayManager.setImage(finalImageBitmap);
-  overlayManager.enable();
-  toggleOverlayBtn.classList.add('active');
-  toggleOverlayBtn.setAttribute('aria-pressed', 'true');
+        overlayManager.disable();
+        toggleOverlayBtn.disabled = true;
+        toggleOverlayBtn.classList.remove('active');
+        toggleOverlayBtn.setAttribute('aria-pressed', 'false');
 
   // Keep state.imageData.processor as the original-based source; painting uses paletted pixels already stored
 
@@ -5022,13 +5023,13 @@ function applyTheme() {
           state.originalImage = { dataUrl: imageSrc, width, height };
           saveBotSettings();
 
-          // Use the original image for the overlay initially
+          // Prepare overlay with original image but keep it disabled until painting starts
           const imageBitmap = await createImageBitmap(processor.img);
           await overlayManager.setImage(imageBitmap);
-          overlayManager.enable();
-          toggleOverlayBtn.disabled = false;
-          toggleOverlayBtn.classList.add('active');
-          toggleOverlayBtn.setAttribute('aria-pressed', 'true');
+          overlayManager.disable();
+          toggleOverlayBtn.disabled = true;
+          toggleOverlayBtn.classList.remove('active');
+          toggleOverlayBtn.setAttribute('aria-pressed', 'false');
 
           // Only enable resize button if colors have also been captured
           if (state.colorsChecked) {
@@ -5135,20 +5136,67 @@ function applyTheme() {
 
       async function startPainting() {
         if (!state.imageLoaded || !state.startPosition || !state.region) {
-          updateUI("missingRequirements", "error")
-          return false
+          updateUI("missingRequirements", "error");
+          return false;
         }
 
-        // Show the final template overlay instead of painting automatically
-        overlayManager.enable()
-        toggleOverlayBtn.classList.add('active')
-        toggleOverlayBtn.setAttribute('aria-pressed', 'true')
-        Utils.showAlert(Utils.t("overlayEnabled"), "info")
+        // Ensure we have a palette of available colors
+        if (!state.activeColorPalette || state.activeColorPalette.length === 0) {
+          state.activeColorPalette = (state.availableColors || []).map(c => c.rgb);
+        }
 
-        // Disable controls related to auto painting
-        startBtn.disabled = true
-        stopBtn.disabled = true
-        return true
+        try {
+          const { width, height, pixels } = state.imageData;
+          const tempCanvas = document.createElement('canvas');
+          tempCanvas.width = width;
+          tempCanvas.height = height;
+          const ctx = tempCanvas.getContext('2d');
+          ctx.imageSmoothingEnabled = false;
+
+          const imgData = ctx.createImageData(width, height);
+          imgData.data.set(pixels);
+          const data = imgData.data;
+          const tThresh2 = state.customTransparencyThreshold || CONFIG.TRANSPARENCY_THRESHOLD;
+          let totalValidPixels = 0;
+
+          for (let i = 0; i < data.length; i += 4) {
+            const r = data[i], g = data[i + 1], b = data[i + 2], a = data[i + 3];
+            const isTransparent = !state.paintTransparentPixels && a < tThresh2;
+            const isWhiteAndSkipped = !state.paintWhitePixels && Utils.isWhitePixel(r, g, b);
+            if (isTransparent || isWhiteAndSkipped) {
+              data[i + 3] = 0;
+              continue;
+            }
+            totalValidPixels++;
+            const [nr, ng, nb] = Utils.findClosestPaletteColor(r, g, b, state.activeColorPalette);
+            data[i] = nr;
+            data[i + 1] = ng;
+            data[i + 2] = nb;
+            data[i + 3] = 255;
+          }
+
+          ctx.putImageData(imgData, 0, 0);
+          const finalBitmap = await createImageBitmap(tempCanvas);
+          await overlayManager.setImage(finalBitmap);
+          overlayManager.enable();
+          toggleOverlayBtn.disabled = false;
+          toggleOverlayBtn.classList.add('active');
+          toggleOverlayBtn.setAttribute('aria-pressed', 'true');
+          Utils.showAlert(Utils.t('overlayEnabled'), 'info');
+
+          // Update state with processed pixel data for manual painting reference
+          state.imageData.pixels = new Uint8ClampedArray(imgData.data);
+          state.imageData.totalPixels = totalValidPixels;
+          state.totalPixels = totalValidPixels;
+          state.paintedPixels = 0;
+
+          startBtn.disabled = true;
+          stopBtn.disabled = true;
+          return true;
+        } catch {
+          updateUI('paintingError', 'error');
+          return false;
+        }
       }
 
     if (startBtn) {
