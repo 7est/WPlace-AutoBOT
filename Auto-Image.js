@@ -871,118 +871,11 @@ function applyTheme() {
 
   const overlayManager = new OverlayManager();
 
-  // Optimized Turnstile token handling with improved caching and retry logic
+  // Turnstile token handling
   let turnstileToken = null
-  let tokenExpiryTime = 0
-  let tokenGenerationInProgress = false
   let _resolveToken = null
   let tokenPromise = new Promise((resolve) => { _resolveToken = resolve })
-  let retryCount = 0
-  const MAX_RETRIES = 10
   const MAX_BATCH_RETRIES = 10 // Maximum attempts for batch sending
-  const TOKEN_LIFETIME = 240000 // 4 minutes (tokens typically last 5 min, use 4 for safety)
-
-  function setTurnstileToken(token) {
-    if (_resolveToken) {
-      _resolveToken(token)
-      _resolveToken = null
-    }
-    turnstileToken = token
-    tokenExpiryTime = Date.now() + TOKEN_LIFETIME
-    console.log("✅ Turnstile token set successfully")
-  }
-
-  function isTokenValid() {
-    return turnstileToken && Date.now() < tokenExpiryTime
-  }
-
-  function invalidateToken() {
-    turnstileToken = null
-    tokenExpiryTime = 0
-    console.log("🗑️ Token invalidated, will force fresh generation")
-  }
-
-  async function ensureToken(forceRefresh = false) {
-    // Return cached token if still valid and not forcing refresh
-    if (isTokenValid() && !forceRefresh) {
-      return turnstileToken;
-    }
-
-    // Invalidate token if forcing refresh
-    if (forceRefresh) invalidateToken();
-
-    // Avoid multiple simultaneous token generations
-    if (tokenGenerationInProgress) {
-      console.log("🔄 Token generation already in progress, waiting...");
-      await Utils.sleep(2000);
-      return isTokenValid() ? turnstileToken : null;
-    }
-
-    tokenGenerationInProgress = true;
-    
-    try {
-      console.log("🔄 Token expired or missing, generating new one...");
-      const token = await handleCaptchaWithRetry();
-      if (token && token.length > 20) {
-        setTurnstileToken(token);
-        console.log("✅ Token captured and cached successfully");
-        return token;
-      }
-
-      console.log("⚠️ Invisible Turnstile failed, forcing browser automation...");
-      const fallbackToken = await handleCaptchaFallback();
-      if (fallbackToken && fallbackToken.length > 20) {
-        setTurnstileToken(fallbackToken);
-        console.log("✅ Fallback token captured successfully");
-        return fallbackToken;
-      }
-
-      console.log("❌ All token generation methods failed");
-      return null;
-    } finally {
-      tokenGenerationInProgress = false;
-    }
-  }
-
-  async function handleCaptchaWithRetry(maxAttempts = 3) {
-    for (let attempt = 1; attempt <= maxAttempts; attempt++) {
-      const startTime = Date.now();
-      try {
-        const sitekey = Utils.detectSitekey();
-        console.log("🔑 Generating Turnstile token for sitekey:", sitekey, "Attempt:", attempt);
-
-        if (typeof window !== "undefined" && window.navigator) {
-          console.log("🧭 UA:", window.navigator.userAgent, "Platform:", window.navigator.platform);
-        }
-
-        const token = await Utils.generatePaintToken(sitekey);
-        if (token && token.length > 20) {
-          const elapsed = Math.round(Date.now() - startTime);
-          console.log(`✅ Turnstile token generated successfully in ${elapsed}ms (attempt ${attempt})`);
-          return token;
-        }
-        throw new Error("Invalid or empty token received");
-      } catch (error) {
-        const elapsed = Math.round(Date.now() - startTime);
-        console.log(`❌ Turnstile token generation failed after ${elapsed}ms on attempt ${attempt}:`, error);
-        if (Utils.cleanupTurnstile) {
-          try { Utils.cleanupTurnstile(); } catch (_) {}
-        }
-        if (attempt < maxAttempts) {
-          await Utils.sleep(1000);
-          continue;
-        }
-        throw error;
-      }
-    }
-  }
-
-  async function handleCaptchaFallback() {
-    // Implementation for fallback token generation would go here
-    // This is a placeholder for browser automation fallback
-    console.log("🔄 Attempting fallback token generation...");
-    return null;
-  }
 
   function inject(callback) {
     const script = document.createElement('script');
@@ -1058,7 +951,8 @@ function applyTheme() {
     }
 
     if (source === 'turnstile-capture' && token) {
-      setTurnstileToken(token);
+      turnstileToken = token;
+      if (_resolveToken) { _resolveToken(token); _resolveToken = null; }
       if (document.querySelector("#statusText")?.textContent.includes("CAPTCHA")) {
         Utils.showAlert(Utils.t("tokenCapturedSuccess"), "success");
         updateUI("colorsFound", "success", { count: state.availableColors.length });
@@ -2332,8 +2226,15 @@ function applyTheme() {
   const WPlaceService = {
     async paintPixelInRegion(regionX, regionY, pixelX, pixelY, color) {
       try {
-        await ensureToken()
-        if (!turnstileToken) return "token_error"
+        if (!turnstileToken) {
+          try {
+            turnstileToken = await handleCaptcha();
+          } catch (e) {
+            console.error("❌ Failed to generate Turnstile token:", e)
+            tokenPromise = new Promise((resolve) => { _resolveToken = resolve })
+            return "token_error"
+          }
+        }
         const payload = { coords: [pixelX, pixelY], colors: [color], t: turnstileToken }
         const fp = await createWasmToken(regionX, regionY, payload)
         if (fp) payload.fp = fp
@@ -5234,7 +5135,11 @@ function applyTheme() {
         updateUI("missingRequirements", "error")
         return false
       }
-      await ensureToken()
+      try {
+        turnstileToken = await handleCaptcha()
+      } catch (e) {
+        console.error("❌ Failed to generate Turnstile token:", e)
+      }
       if (!turnstileToken) return false
 
       state.running = true
@@ -5976,51 +5881,12 @@ function applyTheme() {
     Utils.showAlert(Utils.t('fileOperationsAvailable'), "success");
   }
 
-  // Optimized token initialization with better timing and error handling
-  async function initializeTokenGenerator() {
-    // Skip if already have valid token
-    if (isTokenValid()) {
-      console.log("✅ Valid token already available, skipping initialization");
-      updateUI("tokenReady", "success");
-      enableFileOperations(); // Enable file operations since initial setup is complete
-      return;
-    }
-
-    try {
-      console.log("🔧 Initializing Turnstile token generator...");
-      updateUI("initializingToken", "default");
-
-      console.log("Attempting to load Turnstile script...");
-      await Utils.loadTurnstile();
-      console.log("Turnstile script loaded. Attempting to generate token...");
-
-      const token = await handleCaptchaWithRetry();
-      if (token) {
-        setTurnstileToken(token);
-        console.log("✅ Startup token generated successfully");
-        updateUI("tokenReady", "success");
-        Utils.showAlert(Utils.t('tokenGeneratorReady'), "success");
-        enableFileOperations(); // Enable file operations since initial setup is complete
-      } else {
-        console.warn("⚠️ Startup token generation failed (no token received), will retry when needed");
-        updateUI("tokenRetryLater", "warning");
-        enableFileOperations();
-      }
-    } catch (error) {
-      console.error("❌ Critical error during Turnstile initialization:", error); // More specific error
-      updateUI("tokenRetryLater", "warning");
-      enableFileOperations();
-    }
-  }
-
   // Load theme preference immediately on startup before creating UI
   loadThemePreference()
   applyTheme()
 
   createUI().then(() => {
-    // Generate token automatically after UI is ready
-    setTimeout(initializeTokenGenerator, 1000);
-
+    enableFileOperations();
     // Attach advanced color matching listeners (resize dialog)
     const advancedInit = () => {
       const chromaSlider = document.getElementById('chromaPenaltyWeightSlider');
