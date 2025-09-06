@@ -5568,126 +5568,62 @@ function applyTheme() {
   }
 
   // Helper function to retry batch until success with exponential backoff
-  async function sendBatchWithRetry(pixels, regionX, regionY, maxRetries = MAX_BATCH_RETRIES) {
-    let attempt = 0;
-    while (attempt < maxRetries && !state.stopFlag) {
-      attempt++;
-      console.log(`🔄 Attempting to send batch (attempt ${attempt}/${maxRetries}) for region ${regionX},${regionY} with ${pixels.length} pixels`);
-      
-      const result = await sendPixelBatch(pixels, regionX, regionY);
-      
-      if (result === true) {
-        console.log(`✅ Batch succeeded on attempt ${attempt}`);
-        return true;
-      } else if (result === "token_error") {
-        console.log(`🔑 Token error on attempt ${attempt}, regenerating...`);
-        updateUI("captchaSolving", "warning");
-        try {
-          await handleCaptcha();
-          // Don't count token regeneration as a failed attempt
-          attempt--;
-          continue;
-        } catch (e) {
-          console.error(`❌ Token regeneration failed on attempt ${attempt}:`, e);
-          updateUI("captchaFailed", "error");
-          // Wait longer before retrying after token failure
-          await Utils.sleep(5000);
-        }
-      } else {
-        console.warn(`⚠️ Batch failed on attempt ${attempt}, retrying...`);
-        // Exponential backoff with jitter
-        const baseDelay = Math.min(1000 * Math.pow(2, attempt - 1), 30000); // Max 30s
-        const jitter = Math.random() * 1000; // Add up to 1s random delay
-        await Utils.sleep(baseDelay + jitter);
-      }
-    }
-    
-    if (attempt >= maxRetries) {
-      console.error(`❌ Batch failed after ${maxRetries} attempts (MAX_BATCH_RETRIES=${MAX_BATCH_RETRIES}). This will stop painting to prevent infinite loops.`);
-      updateUI("paintingError", "error");
-      return false;
-    }
-    
-    return false;
+  async function sendBatchWithRetry(pixels, regionX, regionY) {
+    // Backend painting is no longer available; simply attempt to paint once
+    return await sendPixelBatch(pixels, regionX, regionY);
   }
 
   async function sendPixelBatch(pixelBatch, regionX, regionY) {
-    let token = turnstileToken;
-    
-    // Generate new token if we don't have one
-    if (!token) {
-      try {
-        console.log("🔑 Generating Turnstile token for pixel batch...");
-        token = await handleCaptcha();
-        turnstileToken = token; // Store for potential reuse
-      } catch (error) {
-        console.error("❌ Failed to generate Turnstile token:", error);
-        tokenPromise = new Promise((resolve) => { _resolveToken = resolve });
-        return "token_error";
+    for (const pixel of pixelBatch) {
+      const globalX = regionX + pixel.x;
+      const globalY = regionY + pixel.y;
+      const success = await simulateMousePaint(globalX, globalY, pixel.color);
+      if (!success) {
+        return false;
       }
     }
+    return true;
+  }
 
-    const coords = new Array(pixelBatch.length * 2)
-    const colors = new Array(pixelBatch.length)
-    for (let i = 0; i < pixelBatch.length; i++) {
-      const pixel = pixelBatch[i]
-      coords[i * 2] = pixel.x
-      coords[i * 2 + 1] = pixel.y
-      colors[i] = pixel.color
-    }
-
+  async function simulateMousePaint(x, y, colorId) {
     try {
-      const payload = { coords, colors, t: token }
-
-      const res = await fetch(`https://backend.wplace.live/s0/pixel/${regionX}/${regionY}`, {
-        method: "POST",
-        headers: { "Content-Type": "text/plain;charset=UTF-8" },
-        credentials: "include",
-        body: JSON.stringify(payload),
-      })
-
-      if (res.status === 403) {
-        let data = null
-        try { data = await res.json() } catch (_) { }
-        console.error("❌ 403 Forbidden. Turnstile token might be invalid or expired.")
-        
-        // Try to generate a new token and retry once
-        try {
-          console.log("🔄 Regenerating Turnstile token after 403...");
-          token = await handleCaptcha();
-          turnstileToken = token;
-          
-          // Retry the request with new token
-          const retryPayload = { coords, colors, t: token };
-          const retryRes = await fetch(`https://backend.wplace.live/s0/pixel/${regionX}/${regionY}`, {
-            method: "POST",
-            headers: { "Content-Type": "text/plain;charset=UTF-8" },
-            credentials: "include",
-            body: JSON.stringify(retryPayload),
-          });
-          
-          if (retryRes.status === 403) {
-            turnstileToken = null;
-            tokenPromise = new Promise((resolve) => { _resolveToken = resolve });
-            return "token_error";
-          }
-          
-          const retryData = await retryRes.json();
-          return retryData?.painted === pixelBatch.length;
-          
-        } catch (retryError) {
-          console.error("❌ Token regeneration failed:", retryError);
-          turnstileToken = null;
-          tokenPromise = new Promise((resolve) => { _resolveToken = resolve });
-          return "token_error";
-        }
+      // Select desired color from palette
+      const colorSelector =
+        document.querySelector(`[data-color='${colorId}']`) ||
+        document.querySelector(`[data-color-id='${colorId}']`);
+      if (colorSelector) {
+        colorSelector.dispatchEvent(new MouseEvent('click', { bubbles: true }));
       }
-      
-      const data = await res.json()
-      return data?.painted === pixelBatch.length
+
+      // Find the canvas and compute the click position
+      const canvas = document.querySelector('canvas');
+      if (!canvas) return false;
+      const rect = canvas.getBoundingClientRect();
+      const scaleX = canvas.width / rect.width;
+      const scaleY = canvas.height / rect.height;
+      const clientX = rect.left + (x + 0.5) / scaleX;
+      const clientY = rect.top + (y + 0.5) / scaleY;
+
+      // Click the target pixel
+      canvas.dispatchEvent(
+        new MouseEvent('click', { clientX, clientY, bubbles: true })
+      );
+
+      // Click the paint/confirm button if present
+      const paintBtn =
+        document.querySelector('#paint-btn') ||
+        document.querySelector('button[aria-label="Paint"]') ||
+        document.querySelector('.paint-btn');
+      if (paintBtn) {
+        paintBtn.dispatchEvent(new MouseEvent('click', { bubbles: true }));
+      }
+
+      // Small delay to mimic human interaction
+      await Utils.sleep(100);
+      return true;
     } catch (e) {
-      console.error("Batch paint request failed:", e)
-      return false
+      console.error('Simulated painting failed:', e);
+      return false;
     }
   }
 
