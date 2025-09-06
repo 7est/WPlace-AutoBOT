@@ -944,28 +944,36 @@ function applyTheme() {
     }
   }
 
-  async function handleCaptchaWithRetry() {
-    const startTime = Date.now();
-    try {
-      const sitekey = Utils.detectSitekey();
-      console.log("🔑 Generating Turnstile token for sitekey:", sitekey);
+  async function handleCaptchaWithRetry(maxAttempts = 3) {
+    for (let attempt = 1; attempt <= maxAttempts; attempt++) {
+      const startTime = Date.now();
+      try {
+        const sitekey = Utils.detectSitekey();
+        console.log("🔑 Generating Turnstile token for sitekey:", sitekey, "Attempt:", attempt);
 
-      if (typeof window !== "undefined" && window.navigator) {
-        console.log("🧭 UA:", window.navigator.userAgent, "Platform:", window.navigator.platform);
-      }
+        if (typeof window !== "undefined" && window.navigator) {
+          console.log("🧭 UA:", window.navigator.userAgent, "Platform:", window.navigator.platform);
+        }
 
-      const token = await Utils.generatePaintToken(sitekey);
-      if (token && token.length > 20) {
-        const elapsed = Math.round(Date.now() - startTime);
-        console.log(`✅ Turnstile token generated successfully in ${elapsed}ms`);
-        return token;
-      } else {
+        const token = await Utils.generatePaintToken(sitekey);
+        if (token && token.length > 20) {
+          const elapsed = Math.round(Date.now() - startTime);
+          console.log(`✅ Turnstile token generated successfully in ${elapsed}ms (attempt ${attempt})`);
+          return token;
+        }
         throw new Error("Invalid or empty token received");
+      } catch (error) {
+        const elapsed = Math.round(Date.now() - startTime);
+        console.log(`❌ Turnstile token generation failed after ${elapsed}ms on attempt ${attempt}:`, error);
+        if (Utils.cleanupTurnstile) {
+          try { Utils.cleanupTurnstile(); } catch (_) {}
+        }
+        if (attempt < maxAttempts) {
+          await Utils.sleep(1000);
+          continue;
+        }
+        throw error;
       }
-    } catch (error) {
-      const elapsed = Math.round(Date.now() - startTime);
-      console.log(`❌ Turnstile token generation failed after ${elapsed}ms:`, error);
-      throw error;
     }
   }
 
