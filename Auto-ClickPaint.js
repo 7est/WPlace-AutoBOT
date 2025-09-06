@@ -17,6 +17,58 @@
     return match ? parseInt(match[1], 10) : 0;
   };
 
+  const getPaletteMap = () => {
+    const map = new Map();
+    document.querySelectorAll('button[data-color]').forEach(btn => {
+      const rgb = getComputedStyle(btn).backgroundColor.match(/\d+/g).slice(0, 3).join(',');
+      map.set(rgb, btn.dataset.color);
+    });
+    return map;
+  };
+
+  const buildQueueFromOverlay = async () => {
+    const overlay = window.overlayManager;
+    if (!overlay || !overlay.imageBitmap || !overlay.startCoords) {
+      throw new Error('Overlay is not ready');
+    }
+
+    const palette = getPaletteMap();
+    const { width, height } = overlay.imageBitmap;
+
+    let canvas, ctx;
+    if (typeof OffscreenCanvas !== 'undefined') {
+      canvas = new OffscreenCanvas(width, height);
+      ctx = canvas.getContext('2d');
+    } else {
+      canvas = document.createElement('canvas');
+      canvas.width = width;
+      canvas.height = height;
+      ctx = canvas.getContext('2d');
+    }
+    ctx.drawImage(overlay.imageBitmap, 0, 0);
+
+    const { data } = ctx.getImageData(0, 0, width, height);
+
+    const tileSize = overlay.tileSize || 1000;
+    const baseX = overlay.startCoords.region.x * tileSize + overlay.startCoords.pixel.x;
+    const baseY = overlay.startCoords.region.y * tileSize + overlay.startCoords.pixel.y;
+
+    const tasks = [];
+    for (let y = 0; y < height; y++) {
+      for (let x = 0; x < width; x++) {
+        const idx = (y * width + x) * 4;
+        const a = data[idx + 3];
+        if (a === 0) continue;
+        const key = `${data[idx]},${data[idx + 1]},${data[idx + 2]}`;
+        const color = palette.get(key);
+        if (!color) continue;
+        tasks.push({ x: baseX + x, y: baseY + y, color });
+      }
+    }
+
+    return tasks;
+  };
+
   const paintPixel = async ({ x, y, color }) => {
     const btn = document.querySelector(SELECTORS.paintBtn);
     if (!btn) throw new Error('Paint button not found');
@@ -41,7 +93,7 @@
     await sleep(50);
   };
 
-  const run = async (queue) => {
+  const run = async queue => {
     const tasks = Array.from(queue);
     while (tasks.length) {
       let charges = getCharges();
@@ -57,8 +109,15 @@
     }
   };
 
+  const start = async queue => {
+    const tasks = queue && queue.length ? queue : await buildQueueFromOverlay();
+    await run(tasks);
+  };
+
   window.AutoClickPaint = {
-    start: run
+    start,
+    run,
+    buildQueueFromOverlay
   };
 })();
 
