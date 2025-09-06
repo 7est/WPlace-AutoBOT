@@ -2228,7 +2228,7 @@ function applyTheme() {
       try {
         if (!turnstileToken) {
           try {
-            turnstileToken = await handleCaptcha();
+            turnstileToken = await handleCaptchaWithRetry();
           } catch (e) {
             console.error("❌ Failed to generate Turnstile token:", e)
             tokenPromise = new Promise((resolve) => { _resolveToken = resolve })
@@ -2571,6 +2571,22 @@ function applyTheme() {
     container.querySelector('#selectAllBtn')?.addEventListener('click', () => toggleAllColors(true, showAllToggle?.checked));
     container.querySelector('#unselectAllBtn')?.addEventListener('click', () => toggleAllColors(false, showAllToggle?.checked));
     container.querySelector('#unselectPaidBtn')?.addEventListener('click', () => unselectAllPaidColors());
+  }
+  async function handleCaptchaWithRetry(maxAttempts = 3) {
+    for (let attempt = 1; attempt <= maxAttempts; attempt++) {
+      try {
+        const token = await handleCaptcha();
+        if (typeof token === 'string' && token.length > 20) {
+          return token;
+        }
+        console.warn(`⚠️ Invalid Turnstile token on attempt ${attempt}`);
+      } catch (err) {
+        console.warn(`⚠️ Turnstile token generation failed on attempt ${attempt}:`, err);
+      }
+      Utils.cleanupTurnstile();
+      await Utils.sleep(1000);
+    }
+    throw new Error(`Failed to generate Turnstile token after ${maxAttempts} attempts`);
   }
   async function handleCaptcha() {
     const startTime = performance.now();
@@ -5136,7 +5152,7 @@ function applyTheme() {
         return false
       }
       try {
-        turnstileToken = await handleCaptcha()
+        turnstileToken = await handleCaptchaWithRetry()
       } catch (e) {
         console.error("❌ Failed to generate Turnstile token:", e)
       }
@@ -5555,7 +5571,7 @@ function applyTheme() {
         console.log(`🔑 Token error on attempt ${attempt}, regenerating...`);
         updateUI("captchaSolving", "warning");
         try {
-          await handleCaptcha();
+          await handleCaptchaWithRetry();
           // Don't count token regeneration as a failed attempt
           attempt--;
           continue;
@@ -5590,7 +5606,7 @@ function applyTheme() {
     if (!token) {
       try {
         console.log("🔑 Generating Turnstile token for pixel batch...");
-        token = await handleCaptcha();
+        token = await handleCaptchaWithRetry();
         turnstileToken = token; // Store for potential reuse
       } catch (error) {
         console.error("❌ Failed to generate Turnstile token:", error);
@@ -5628,7 +5644,7 @@ function applyTheme() {
         // Try to generate a new token and retry once
         try {
           console.log("🔄 Regenerating Turnstile token after 403...");
-          token = await handleCaptcha();
+          token = await handleCaptchaWithRetry();
           turnstileToken = token;
           
           // Retry the request with new token
