@@ -1,27 +1,36 @@
 (async () => {
   const sleep = ms => new Promise(r => setTimeout(r, ms));
 
+  // Dynamic selectors for current UI structure
   const SELECTORS = {
-    paintBtn: 'button[aria-label="Paint"]',
-    canvas: 'canvas',
-    colorBtn: id => `button[data-color="${id}"]`,
-    charges: 'button[aria-label="Paint"] span.charges'
+    // Find the first button whose text contains "Paint"
+    paintBtn: () => Array.from(document.querySelectorAll('button')).find(b => /Paint/i.test(b.textContent)),
+    // Board canvas is the largest canvas element on the page
+    canvas: () =>
+      Array.from(document.querySelectorAll('canvas')).sort(
+        (a, b) => b.width * b.height - a.width * a.height
+      )[0],
+    // Palette color buttons use id="color-N"
+    colorBtn: id => document.getElementById(`color-${id}`)
   };
 
   const click = el => el && el.dispatchEvent(new MouseEvent('click', { bubbles: true }));
 
   const getCharges = () => {
-    const el = document.querySelector(SELECTORS.charges);
-    if (!el) return 0;
-    const match = el.textContent.trim().match(/^(\d+)/);
+    const btn = SELECTORS.paintBtn();
+    if (!btn) return 0;
+    const match = btn.textContent.match(/\((\d+)/);
     return match ? parseInt(match[1], 10) : 0;
   };
 
   const getPaletteMap = () => {
     const map = new Map();
-    document.querySelectorAll('button[data-color]').forEach(btn => {
-      const rgb = getComputedStyle(btn).backgroundColor.match(/\d+/g).slice(0, 3).join(',');
-      map.set(rgb, btn.dataset.color);
+    document.querySelectorAll('button[id^="color-"]').forEach(btn => {
+      const rgb = getComputedStyle(btn).backgroundColor
+        .match(/\d+/g)
+        .slice(0, 3)
+        .join(',');
+      map.set(rgb, btn.id.replace('color-', ''));
     });
     return map;
   };
@@ -50,8 +59,12 @@
     const { data } = ctx.getImageData(0, 0, width, height);
 
     const tileSize = overlay.tileSize || 1000;
-    const baseX = overlay.startCoords.region.x * tileSize + overlay.startCoords.pixel.x;
-    const baseY = overlay.startCoords.region.y * tileSize + overlay.startCoords.pixel.y;
+    const baseX =
+      overlay.startCoords.region.x * tileSize + overlay.startCoords.pixel.x;
+    const baseY =
+      overlay.startCoords.region.y * tileSize + overlay.startCoords.pixel.y;
+
+    window.__overlayBase = { x: baseX, y: baseY };
 
     const tasks = [];
     for (let y = 0; y < height; y++) {
@@ -69,27 +82,43 @@
     return tasks;
   };
 
-  const paintPixel = async ({ x, y, color }) => {
-    const btn = document.querySelector(SELECTORS.paintBtn);
-    if (!btn) throw new Error('Paint button not found');
-    click(btn);
-    await sleep(50);
+  const ensurePaintUI = async () => {
+    if (!document.getElementById('color-1')) {
+      const btn = SELECTORS.paintBtn();
+      if (!btn) throw new Error('Paint button not found');
+      click(btn);
+      await sleep(100);
+    }
+  };
 
-    const canvas = document.querySelector(SELECTORS.canvas);
+  const paintPixel = async ({ x, y, color }) => {
+    await ensurePaintUI();
+
+    const canvas = SELECTORS.canvas();
     if (!canvas) throw new Error('Canvas not found');
     const rect = canvas.getBoundingClientRect();
+    const scaleX = rect.width / canvas.width;
+    const scaleY = rect.height / canvas.height;
+    const base = window.__overlayBase || { x: 0, y: 0 };
+    const offsetX = (x - base.x) * scaleX;
+    const offsetY = (y - base.y) * scaleY;
+
     canvas.dispatchEvent(
       new MouseEvent('click', {
-        clientX: rect.left + x,
-        clientY: rect.top + y,
+        clientX: rect.left + offsetX,
+        clientY: rect.top + offsetY,
         bubbles: true
       })
     );
     await sleep(50);
 
-    const colorBtn = document.querySelector(SELECTORS.colorBtn(color));
+    const colorBtn = SELECTORS.colorBtn(color);
     if (!colorBtn) throw new Error('Color button not found');
     click(colorBtn);
+    await sleep(50);
+
+    const confirm = SELECTORS.paintBtn();
+    click(confirm);
     await sleep(50);
   };
 
@@ -98,7 +127,7 @@
     while (tasks.length) {
       let charges = getCharges();
       if (charges === 0) {
-        const btn = document.querySelector(SELECTORS.paintBtn);
+        const btn = SELECTORS.paintBtn();
         if (btn) click(btn);
         while ((charges = getCharges()) === 0) {
           await sleep(1000);
