@@ -2234,6 +2234,92 @@ function applyTheme() {
     }
   }
 
+  // PAWTECT WASM TOKEN GENERATION
+  let pawMod = null
+  let pawWasm = null
+  async function createWasmToken(regionX, regionY, payload) {
+    try {
+      if (!pawMod) {
+        pawMod = await import('/_app/immutable/chunks/BBb1ALhY.js')
+      }
+      if (!pawWasm) {
+        try {
+          pawWasm = await pawMod._()
+          console.log('✅ WASM initialized successfully')
+        } catch (wasmError) {
+          console.error('❌ WASM initialization failed:', wasmError)
+          return null
+        }
+      }
+      try {
+        const me = await fetch(`https://backend.wplace.live/me`, { credentials: 'include' }).then(r => r.ok ? r.json() : null)
+        if (me?.id) {
+          pawMod.i(me.id)
+          console.log('✅ user ID set:', me.id)
+        }
+      } catch (userIdError) {
+        console.log('⚠️ Error setting user ID:', userIdError.message)
+      }
+      try {
+        const testUrl = `https://backend.wplace.live/s0/pixel/${regionX}/${regionY}`
+        if (pawMod.r) {
+          pawMod.r(testUrl)
+          console.log('✅ Request URL set:', testUrl)
+        } else {
+          console.log('⚠️ request_url function (mod.r) not available')
+        }
+      } catch (urlError) {
+        console.log('⚠️ Error setting request URL:', urlError.message)
+      }
+      const enc = new TextEncoder()
+      const dec = new TextDecoder()
+      const bodyStr = JSON.stringify(payload)
+      const bytes = enc.encode(bodyStr)
+      let inPtr
+      try {
+        if (!pawWasm.__wbindgen_malloc) {
+          console.error('❌ __wbindgen_malloc function not found')
+          return null
+        }
+        inPtr = pawWasm.__wbindgen_malloc(bytes.length, 1)
+        const wasmBuffer = new Uint8Array(pawWasm.memory.buffer, inPtr, bytes.length)
+        wasmBuffer.set(bytes)
+      } catch (memError) {
+        console.error('❌ Memory allocation error:', memError)
+        return null
+      }
+      let outPtr, outLen, token
+      try {
+        const result = pawWasm.get_pawtected_endpoint_payload(inPtr, bytes.length)
+        if (Array.isArray(result) && result.length === 2) {
+          ;[outPtr, outLen] = result
+          const outputBuffer = new Uint8Array(pawWasm.memory.buffer, outPtr, outLen)
+          token = dec.decode(outputBuffer)
+        } else {
+          console.error('❌ Unexpected function result format:', result)
+          return null
+        }
+      } catch (funcError) {
+        console.error('❌ Function call error:', funcError)
+        return null
+      }
+      try {
+        if (pawWasm.__wbindgen_free && outPtr && outLen) {
+          pawWasm.__wbindgen_free(outPtr, outLen, 1)
+        }
+        if (pawWasm.__wbindgen_free && inPtr) {
+          pawWasm.__wbindgen_free(inPtr, bytes.length, 1)
+        }
+      } catch (cleanupError) {
+        console.log('⚠️ Cleanup warning:', cleanupError.message)
+      }
+      return token
+    } catch (error) {
+      console.error('❌ Failed to generate fp parameter:', error)
+      return null
+    }
+  }
+
   // WPLACE API SERVICE
   const WPlaceService = {
     async paintPixelInRegion(regionX, regionY, pixelX, pixelY, color) {
@@ -2241,6 +2327,8 @@ function applyTheme() {
         await ensureToken()
         if (!turnstileToken) return "token_error"
         const payload = { coords: [pixelX, pixelY], colors: [color], t: turnstileToken }
+        const fp = await createWasmToken(regionX, regionY, payload)
+        if (fp) payload.fp = fp
         const res = await fetch(`https://backend.wplace.live/s0/pixel/${regionX}/${regionY}`, {
           method: "POST",
           headers: { "Content-Type": "text/plain;charset=UTF-8" },
@@ -5609,6 +5697,8 @@ function applyTheme() {
 
     try {
       const payload = { coords, colors, t: token }
+      const fp = await createWasmToken(regionX, regionY, payload)
+      if (fp) payload.fp = fp
 
       const res = await fetch(`https://backend.wplace.live/s0/pixel/${regionX}/${regionY}`, {
         method: "POST",
@@ -5629,14 +5719,16 @@ function applyTheme() {
           turnstileToken = token;
           
           // Retry the request with new token
-          const retryPayload = { coords, colors, t: token };
+          const retryPayload = { coords, colors, t: token }
+          const retryFp = await createWasmToken(regionX, regionY, retryPayload)
+          if (retryFp) retryPayload.fp = retryFp
           const retryRes = await fetch(`https://backend.wplace.live/s0/pixel/${regionX}/${regionY}`, {
             method: "POST",
             headers: { "Content-Type": "text/plain;charset=UTF-8" },
             credentials: "include",
             body: JSON.stringify(retryPayload),
           });
-          
+
           if (retryRes.status === 403) {
             turnstileToken = null;
             tokenPromise = new Promise((resolve) => { _resolveToken = resolve });
