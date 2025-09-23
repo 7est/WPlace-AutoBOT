@@ -707,6 +707,9 @@ function getText(key, params) {
       selectPosition: 'Select Position',
       startPainting: 'Start Painting',
       stopPainting: 'Stop Painting',
+      paintMismatchedPixels: 'Paint Differences',
+      paintMismatchedDescription: 'Scan the canvas first and only paint pixels with different colors.',
+      startMismatchPaintingMsg: 'Scanning for differences before painting...',
       progress: 'Progress',
       pixels: 'Pixels',
       charges: 'Charges',
@@ -2317,6 +2320,12 @@ function getText(key, params) {
               </button>
             </div>
             <div class="wplace-row single">
+              <button id="mismatchPaintBtn" class="wplace-btn wplace-btn-secondary" disabled title="${Utils.t('paintMismatchedDescription')}">
+                <i class="fas fa-adjust"></i>
+                <span>${Utils.t('paintMismatchedPixels')}</span>
+              </button>
+            </div>
+            <div class="wplace-row single">
                 <button id="toggleOverlayBtn" class="wplace-btn wplace-btn-overlay" disabled>
                     <i class="fas fa-eye"></i>
                     <span>${Utils.t('toggleOverlay')}</span>
@@ -3186,6 +3195,7 @@ function getText(key, params) {
     const selectPosBtn = container.querySelector('#selectPosBtn');
     const startBtn = container.querySelector('#startBtn');
     const stopBtn = container.querySelector('#stopBtn');
+    const mismatchBtn = container.querySelector('#mismatchPaintBtn');
     const saveBtn = container.querySelector('#saveBtn');
     const loadBtn = container.querySelector('#loadBtn');
     const saveToFileBtn = container.querySelector('#saveToFileBtn');
@@ -3242,12 +3252,13 @@ function getText(key, params) {
     const cooldownIncrease = container.querySelector('#cooldownIncrease');
     const cooldownValue = container.querySelector('#cooldownValue');
 
-    if (!uploadBtn || !selectPosBtn || !startBtn || !stopBtn) {
+    if (!uploadBtn || !selectPosBtn || !startBtn || !stopBtn || !mismatchBtn) {
       console.error('Some UI elements not found:', {
         uploadBtn: !!uploadBtn,
         selectPosBtn: !!selectPosBtn,
         startBtn: !!startBtn,
         stopBtn: !!stopBtn,
+        mismatchBtn: !!mismatchBtn,
       });
     }
 
@@ -3974,6 +3985,9 @@ function getText(key, params) {
 
             if (state.imageLoaded && state.startPosition && state.region && state.colorsChecked) {
               startBtn.disabled = false;
+              if (mismatchBtn) {
+                mismatchBtn.disabled = false;
+              }
             }
           } else {
             Utils.showAlert(Utils.t('errorLoadingProgress'), 'error');
@@ -4077,6 +4091,9 @@ function getText(key, params) {
             if (state.imageLoaded && state.startPosition && state.region && state.colorsChecked) {
               console.log('🔍 [DEBUG] All conditions met, enabling start button');
               startBtn.disabled = false;
+              if (mismatchBtn) {
+                mismatchBtn.disabled = false;
+              }
             } else {
               console.log('⚠️ [DEBUG] Start button requirements not met');
             }
@@ -5695,6 +5712,9 @@ function getText(key, params) {
 
           if (state.startPosition) {
             startBtn.disabled = false;
+            if (mismatchBtn) {
+              mismatchBtn.disabled = false;
+            }
           }
 
           await updateStats();
@@ -5902,6 +5922,9 @@ function getText(key, params) {
                   }
 
                   startBtn.disabled = false;
+                  if (mismatchBtn) {
+                    mismatchBtn.disabled = false;
+                  }
                   selectPosBtn.textContent = Utils.t('selectPosition');
                   
                   // Enable Move Artwork button when position is set
@@ -5974,6 +5997,9 @@ function getText(key, params) {
         state.startPosition = null;
         state.region = null;
         startBtn.disabled = true;
+        if (mismatchBtn) {
+          mismatchBtn.disabled = true;
+        }
         
         // Disable Move Artwork button when selecting new position
         const moveArtworkBtn = document.getElementById('moveArtworkBtn');
@@ -6027,7 +6053,10 @@ function getText(key, params) {
 
                   if (state.imageLoaded) {
                     startBtn.disabled = false;
-                    
+                    if (mismatchBtn) {
+                      mismatchBtn.disabled = false;
+                    }
+
                     // Enable Move Artwork button when position is set
                     const moveArtworkBtn = document.getElementById('moveArtworkBtn');
                     if (moveArtworkBtn) {
@@ -6063,13 +6092,20 @@ function getText(key, params) {
       });
     }
 
-    async function startPainting() {
+    async function startPainting(options = {}) {
+      const { mismatchOnly = false } = options;
+
       if (!state.imageLoaded || !state.startPosition || !state.region) {
         updateUI('missingRequirements', 'error');
         return;
       }
       await ensureToken();
       if (!getTurnstileToken()) return;
+
+      if (mismatchOnly) {
+        console.log('🆚 Mismatch-only mode enabled: forcing fresh canvas scan before painting.');
+        state.preFilteringDone = false;
+      }
 
       // Only reset progress once per save file load session
       if (!state.progressResetDone) {
@@ -6082,7 +6118,7 @@ function getText(key, params) {
 
       // Only reset painted pixels on first start of session (when pre-filtering hasn't been done)
       if (!state.preFilteringDone) {
-        
+
         // Perform progressive pixel detection from top-left to bottom-right
         console.log('🔍 Starting progressive pixel detection from top-left to bottom-right...');
         await performProgressivePixelDetection();
@@ -6093,6 +6129,9 @@ function getText(key, params) {
       state.running = true;
       state.stopFlag = false;
       startBtn.disabled = true;
+      if (mismatchBtn) {
+        mismatchBtn.disabled = true;
+      }
       stopBtn.disabled = false;
       uploadBtn.disabled = true;
       selectPosBtn.disabled = true;
@@ -6100,7 +6139,7 @@ function getText(key, params) {
       saveBtn.disabled = true;
       toggleOverlayBtn.disabled = true;
 
-      updateUI('startPaintingMsg', 'success');
+      updateUI(mismatchOnly ? 'startMismatchPaintingMsg' : 'startPaintingMsg', 'success');
 
       try {
         await getAccounts();
@@ -6115,8 +6154,14 @@ function getText(key, params) {
 
         if (state.stopFlag) {
           startBtn.disabled = false;
+          if (mismatchBtn) {
+            mismatchBtn.disabled = false;
+          }
         } else {
           startBtn.disabled = true;
+          if (mismatchBtn) {
+            mismatchBtn.disabled = true;
+          }
           uploadBtn.disabled = false;
           const loadExtractedBtn = document.getElementById('loadExtractedBtn');
           if (loadExtractedBtn) loadExtractedBtn.disabled = false;
@@ -6128,7 +6173,11 @@ function getText(key, params) {
     }
 
     if (startBtn) {
-      startBtn.addEventListener('click', startPainting);
+      startBtn.addEventListener('click', () => startPainting());
+    }
+
+    if (mismatchBtn) {
+      mismatchBtn.addEventListener('click', () => startPainting({ mismatchOnly: true }));
     }
 
     if (stopBtn) {
