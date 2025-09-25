@@ -139,5 +139,9 @@
   "hideStats": "Ocultar Estatísticas",
   "paintOptions": "Opções de pintura",
   "paintWhitePixels": "Pintar pixels brancos",
-  "paintTransparentPixels": "Pintar pixels transparentes"
+  "paintTransparentPixels": "Pintar pixels transparentes",
+  "verifyBeforePainting": "Verify Before Painting",
+  "verifyBeforePaintingDescription": "Compare board pixels before painting to skip already correct colors.",
+  "verifyBeforePaintingEnabled": "Pixel verification before painting enabled.",
+  "verifyBeforePaintingDisabled": "Pixel verification before painting disabled."
 }

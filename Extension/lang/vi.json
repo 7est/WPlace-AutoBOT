@@ -140,5 +140,9 @@
   "hideStats": "Ẩn thống kê",
   "paintOptions": "Tùy chọn vẽ",
   "paintWhitePixels": "Vẽ điểm ảnh trắng",
-  "paintTransparentPixels": "Vẽ điểm ảnh trong suốt"
+  "paintTransparentPixels": "Vẽ điểm ảnh trong suốt",
+  "verifyBeforePainting": "Verify Before Painting",
+  "verifyBeforePaintingDescription": "Compare board pixels before painting to skip already correct colors.",
+  "verifyBeforePaintingEnabled": "Pixel verification before painting enabled.",
+  "verifyBeforePaintingDisabled": "Pixel verification before painting disabled."
 }
