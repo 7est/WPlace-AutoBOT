@@ -140,5 +140,9 @@
   "hideStats": "İstatistikleri Gizle",
   "paintOptions": "Boya Seçenekleri",
   "paintWhitePixels": "Beyaz pikselleri boya",
-  "paintTransparentPixels": "Şeffaf pikselleri boya"
+  "paintTransparentPixels": "Şeffaf pikselleri boya",
+  "verifyBeforePainting": "Verify Before Painting",
+  "verifyBeforePaintingDescription": "Compare board pixels before painting to skip already correct colors.",
+  "verifyBeforePaintingEnabled": "Pixel verification before painting enabled.",
+  "verifyBeforePaintingDisabled": "Pixel verification before painting disabled."
 }

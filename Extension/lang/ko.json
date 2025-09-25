@@ -140,5 +140,9 @@
   "hideStats": "통계 숨김",
   "paintOptions": "페인트 옵션",
   "paintWhitePixels": "흰색 픽셀 칠하기",
-  "paintTransparentPixels": "투명 픽셀 칠하기"
+  "paintTransparentPixels": "투명 픽셀 칠하기",
+  "verifyBeforePainting": "Verify Before Painting",
+  "verifyBeforePaintingDescription": "Compare board pixels before painting to skip already correct colors.",
+  "verifyBeforePaintingEnabled": "Pixel verification before painting enabled.",
+  "verifyBeforePaintingDisabled": "Pixel verification before painting disabled."
 }

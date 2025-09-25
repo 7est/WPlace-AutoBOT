@@ -140,5 +140,9 @@
   "hideStats": "隱藏統計",
   "paintOptions": "繪圖選項",
   "paintWhitePixels": "繪製白色像素",
-  "paintTransparentPixels": "繪製透明像素"
+  "paintTransparentPixels": "繪製透明像素",
+  "verifyBeforePainting": "Verify Before Painting",
+  "verifyBeforePaintingDescription": "Compare board pixels before painting to skip already correct colors.",
+  "verifyBeforePaintingEnabled": "Pixel verification before painting enabled.",
+  "verifyBeforePaintingDisabled": "Pixel verification before painting disabled."
 }

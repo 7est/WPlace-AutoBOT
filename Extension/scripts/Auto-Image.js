@@ -77,6 +77,7 @@ function getText(key, params) {
     AUTO_CAPTCHA_ENABLED: true, // Turnstile generator enabled by default
     TOKEN_SOURCE: 'generator', // "generator", "manual", or "hybrid" - default to generator
     COOLDOWN_CHARGE_THRESHOLD: 1, // Default wait threshold
+    VERIFY_BEFORE_PAINT: true, // Compare board pixels before painting by default
     // Desktop Notifications (defaults)
     NOTIFICATIONS: {
       ENABLED: false,
@@ -989,6 +990,7 @@ function getText(key, params) {
     originalImage: null,
     resizeIgnoreMask: null,
     paintUnavailablePixels: CONFIG.PAINT_UNAVAILABLE,
+    verifyBeforePainting: CONFIG.VERIFY_BEFORE_PAINT,
     // Coordinate generation settings
     coordinateMode: CONFIG.COORDINATE_MODE,
     coordinateDirection: CONFIG.COORDINATE_DIRECTION,
@@ -2604,6 +2606,19 @@ function getText(key, params) {
           </label>
           <!-- Pixel Filter Toggles -->
           <div id="pixelFilterControls" class="wplace-settings-section-wrapper wplace-pixel-filter-controls">
+            <label class="wplace-settings-toggle">
+              <div>
+                <span class="wplace-settings-toggle-title" style="color: ${theme.text || 'white'};">
+                  ${Utils.t('verifyBeforePainting')}
+                </span>
+                <p class="wplace-settings-toggle-description" style="color: ${theme.text ? `${theme.text}BB` : 'rgba(255,255,255,0.7)'};">
+                  ${Utils.t('verifyBeforePaintingDescription')}
+                </p>
+              </div>
+              <input type="checkbox" id="verifyBeforePaintToggle" ${state.verifyBeforePainting ? 'checked' : ''}
+                class="wplace-settings-checkbox"
+                style="accent-color: ${theme.highlight || '#48dbfb'};"/>
+            </label>
             <!-- Paint White Pixels -->
             <label class="wplace-settings-toggle">
               <div>
@@ -3642,6 +3657,7 @@ function getText(key, params) {
       const settingsPaintTransparentToggle = settingsContainer.querySelector(
         '#settingsPaintTransparentToggle'
       );
+      const verifyBeforePaintToggle = settingsContainer.querySelector('#verifyBeforePaintToggle');
 
       if (overlayOpacitySlider && overlayOpacityValue) {
         const updateOpacity = (newValue) => {
@@ -3683,6 +3699,21 @@ function getText(key, params) {
           const statusText = state.paintTransparentPixels
             ? 'Transparent pixels in the template will be painted with the closest available color'
             : 'Transparent pixels will be skipped';
+          Utils.showAlert(statusText, 'success');
+        });
+      }
+
+      if (verifyBeforePaintToggle) {
+        verifyBeforePaintToggle.checked = state.verifyBeforePainting;
+        verifyBeforePaintToggle.addEventListener('change', (e) => {
+          state.verifyBeforePainting = e.target.checked;
+          saveBotSettings();
+          console.log(
+            `🧪 Verify before painting: ${state.verifyBeforePainting ? 'ON' : 'OFF'}`
+          );
+          const statusText = state.verifyBeforePainting
+            ? Utils.t('verifyBeforePaintingEnabled')
+            : Utils.t('verifyBeforePaintingDisabled');
           Utils.showAlert(statusText, 'success');
         });
       }
@@ -8742,35 +8773,37 @@ function getText(key, params) {
           continue; // Skip already painted pixels
         }
 
-        // REAL-TIME CANVAS CHECK: Verify against actual canvas state to prevent overpainting
-        try {
-          const existingColorRGBA = await overlayManager.getTilePixelColor(
-            regionX + adderX,
-            regionY + adderY,
-            pixelX,
-            pixelY
-          ).catch(() => null);
+        if (state.verifyBeforePainting) {
+          // REAL-TIME CANVAS CHECK: Verify against actual canvas state to prevent overpainting
+          try {
+            const existingColorRGBA = await overlayManager.getTilePixelColor(
+              regionX + adderX,
+              regionY + adderY,
+              pixelX,
+              pixelY
+            ).catch(() => null);
 
-          if (existingColorRGBA && Array.isArray(existingColorRGBA)) {
-            const [er, eg, eb] = existingColorRGBA;
-            const existingMappedColor = Utils.resolveColor(
-              [er, eg, eb],
-              state.availableColors,
-              !state.paintUnavailablePixels
-            );
-            const isAlreadyCorrect = existingMappedColor.id === targetPixelInfo.mappedColorId;
+            if (existingColorRGBA && Array.isArray(existingColorRGBA)) {
+              const [er, eg, eb] = existingColorRGBA;
+              const existingMappedColor = Utils.resolveColor(
+                [er, eg, eb],
+                state.availableColors,
+                !state.paintUnavailablePixels
+              );
+              const isAlreadyCorrect = existingMappedColor.id === targetPixelInfo.mappedColorId;
 
-            if (isAlreadyCorrect) {
-              console.log(`✅ Pixel at (${x}, ${y}) already has correct color (${existingMappedColor.id}) - marking as painted`);
-              // Mark it as painted in local map but DO NOT increment progress counter
-              // Progress should only reflect actual painting sequence position
-              Utils.markPixelPainted(x, y, regionX + adderX, regionY + adderY);
-              continue; // Skip painting this pixel
+              if (isAlreadyCorrect) {
+                console.log(`✅ Pixel at (${x}, ${y}) already has correct color (${existingMappedColor.id}) - marking as painted`);
+                // Mark it as painted in local map but DO NOT increment progress counter
+                // Progress should only reflect actual painting sequence position
+                Utils.markPixelPainted(x, y, regionX + adderX, regionY + adderY);
+                continue; // Skip painting this pixel
+              }
             }
+          } catch (e) {
+            // If we can't check the canvas, proceed with painting (better to attempt than skip)
+            console.warn(`⚠️ Could not verify canvas state for pixel (${x}, ${y}), proceeding with paint:`, e.message);
           }
-        } catch (e) {
-          // If we can't check the canvas, proceed with painting (better to attempt than skip)
-          console.warn(`⚠️ Could not verify canvas state for pixel (${x}, ${y}), proceeding with paint:`, e.message);
         }
 
         const targetMappedColorId = targetPixelInfo.mappedColorId;
@@ -9192,6 +9225,7 @@ function getText(key, params) {
         customWhiteThreshold: state.customWhiteThreshold,
         paintWhitePixels: state.paintWhitePixels,
         paintTransparentPixels: state.paintTransparentPixels,
+        verifyBeforePainting: state.verifyBeforePainting,
         resizeSettings: state.resizeSettings,
         paintUnavailablePixels: state.paintUnavailablePixels,
         coordinateMode: state.coordinateMode,
@@ -9254,6 +9288,7 @@ function getText(key, params) {
       state.resizeSettings = settings.resizeSettings ?? null;
       state.originalImage = settings.originalImage ?? null;
       state.paintUnavailablePixels = settings.paintUnavailablePixels ?? CONFIG.PAINT_UNAVAILABLE;
+      state.verifyBeforePainting = settings.verifyBeforePainting ?? CONFIG.VERIFY_BEFORE_PAINT;
       state.coordinateMode = settings.coordinateMode ?? CONFIG.COORDINATE_MODE;
       state.coordinateDirection = settings.coordinateDirection ?? CONFIG.COORDINATE_DIRECTION;
       state.coordinateSnake = settings.coordinateSnake ?? CONFIG.COORDINATE_SNAKE;
@@ -9320,8 +9355,12 @@ function getText(key, params) {
       const settingsPaintTransparentToggle = settingsContainer.querySelector(
         '#settingsPaintTransparentToggle'
       );
+      const verifyBeforePaintToggle = settingsContainer.querySelector('#verifyBeforePaintToggle');
       if (settingsPaintTransparentToggle) {
         settingsPaintTransparentToggle.checked = state.paintTransparentPixels;
+      }
+      if (verifyBeforePaintToggle) {
+        verifyBeforePaintToggle.checked = state.verifyBeforePainting;
       }
 
       const speedSlider = document.getElementById('speedSlider');

@@ -139,5 +139,9 @@
   "hideStats": "Скрыть статистику",
   "paintOptions": "Параметры рисования",
   "paintWhitePixels": "Рисовать белые пиксели",
-  "paintTransparentPixels": "Рисовать прозрачные пиксели"
+  "paintTransparentPixels": "Рисовать прозрачные пиксели",
+  "verifyBeforePainting": "Verify Before Painting",
+  "verifyBeforePaintingDescription": "Compare board pixels before painting to skip already correct colors.",
+  "verifyBeforePaintingEnabled": "Pixel verification before painting enabled.",
+  "verifyBeforePaintingDisabled": "Pixel verification before painting disabled."
 }

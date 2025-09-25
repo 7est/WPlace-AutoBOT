@@ -140,5 +140,9 @@
   "hideStats": "Sembunyikan Statistik",
   "paintOptions": "Opsi Pewarnaan",
   "paintWhitePixels": "Warnai piksel putih",
-  "paintTransparentPixels": "Warnai piksel transparan"
+  "paintTransparentPixels": "Warnai piksel transparan",
+  "verifyBeforePainting": "Verify Before Painting",
+  "verifyBeforePaintingDescription": "Compare board pixels before painting to skip already correct colors.",
+  "verifyBeforePaintingEnabled": "Pixel verification before painting enabled.",
+  "verifyBeforePaintingDisabled": "Pixel verification before painting disabled."
 }
